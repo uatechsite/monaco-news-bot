@@ -1,0 +1,38 @@
+name: Monaco Weekly Posts
+
+on:
+  schedule:
+    # Monday 08:00 UTC — weather forecast
+    - cron: "0 8 * * 1"
+    # Thursday 08:00 UTC — weekend events guide
+    - cron: "0 8 * * 4"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "What to post: 'weather' or 'events'"
+        required: false
+        default: ""
+
+jobs:
+  post-weekly:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install feedparser anthropic requests
+
+      - name: Run weekly bot
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHANNEL_ID: ${{ secrets.TELEGRAM_CHANNEL_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          MODE: ${{ github.event.inputs.mode }}
+        run: python weekly.py
