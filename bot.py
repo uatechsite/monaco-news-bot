@@ -21,32 +21,58 @@ TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHANNEL_ID = os.environ["TELEGRAM_CHANNEL_ID"]
 ANTHROPIC_API_KEY = os.environ["ANTHROPIC_API_KEY"]
 
-MAX_POSTS_PER_DAY = 3          # How many posts to publish per run
 SEEN_ITEMS_FILE = "seen_items.json"   # Tracks already-published stories
 
 NEWS_SOURCES = [
-    # English
+    # English — Monaco-specific
     "https://www.monacotribune.com/feed/",
     "https://www.monacolife.net/feed/",
+    "https://www.hellomonaco.com/feed/",
     # French
     "https://www.monacomatin.mc/arc/outboundfeeds/rss/?outputType=xml",
-    # Sports / Events (lots of Monaco content)
+    # Sports / Events
     "https://www.formula1.com/content/fom-website/en/latest/all.xml",
+    # Official Monaco Government news
+    "https://www.gouv.mc/en/rss",
+    # Monaco Yacht Show
+    "https://www.monacoyachtshow.com/en/rss",
+    # Top Marques Monaco
+    "https://www.topmarquesmonaco.com/feed/",
+    # Google News — broad world coverage filtered to Monaco
+    "https://news.google.com/rss/search?q=Monaco+principality&hl=en-US&gl=US&ceid=US:en",
+    "https://news.google.com/rss/search?q=Monte+Carlo&hl=en-US&gl=US&ceid=US:en",
 ]
 
-SYSTEM_PROMPT = """You are the editor of Monaco Daily, a Telegram channel for Monaco residents and expats.
-Your job is to write punchy, engaging news posts in English.
+SYSTEM_PROMPT = """You are the editor of Monaco Digest, a premium Telegram channel for Monaco residents, expats, and professionals.
 
-Rules:
-- 2-4 short paragraphs maximum
-- Start with the most interesting fact or hook — no boring intros
-- Use simple, clear language — your readers are international professionals
-- Add 3-5 relevant hashtags at the end (e.g. #Monaco #GrandPrix #MonteCarlo)
-- Never use clickbait or sensationalism
-- If the story is local/practical (traffic, events, regulations), highlight the impact on daily life
-- Tone: friendly, informed, slightly witty — like a knowledgeable neighbour
-- Do NOT add a title/headline — Telegram posts don't need one
-- Maximum 280 words
+Your daily output is ONE post: the Morning Brief — a curated digest of 3–7 short updates.
+
+FORMAT (follow exactly):
+🇲🇨 Monaco Digest — Daily Brief
+
+1. [One-line update, max 15 words.]
+2. [One-line update, max 15 words.]
+3. [One-line update, max 15 words.]
+... (up to 7 items, only include if genuinely newsworthy)
+
+More tomorrow.
+
+TONE & STYLE:
+- Bloomberg meets luxury lifestyle — informed, dry, no hype
+- Each line reads like insider intel, not a press release
+- No exclamation marks. No clickbait. No filler words.
+- Emoji: only the flag at the top, nowhere else
+- Whitespace matters — keep it clean and scannable
+- Reader is reading between meetings, in a car, on a yacht
+
+CONTENT PRIORITY (in order):
+1. Business, finance, real estate, wealth
+2. Events, hospitality, openings (Top Marques, galas, private clubs)
+3. Formula 1, yacht season, sports
+4. Local regulations, infrastructure, practical updates
+5. International news only if directly relevant to Monaco residents
+
+DO NOT include hashtags, URLs, or source attribution. Just the brief.
 """
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
@@ -105,16 +131,18 @@ def is_monaco_relevant(item: dict) -> bool:
     return any(kw in text for kw in keywords)
 
 
-def generate_post(item: dict, client: anthropic.Anthropic) -> str:
-    """Ask Claude to write a Telegram post from the raw news item."""
-    user_message = f"""Write a Telegram post about this news story for Monaco residents.
+def generate_digest(items: list[dict], client: anthropic.Anthropic) -> str:
+    """Ask Claude to compile a Morning Brief digest from multiple news items."""
+    news_block = "\n\n".join(
+        f"- {item['title']}\n  {item['summary'][:300]}"
+        for item in items[:20]  # send up to 20 headlines as raw material
+    )
+    user_message = f"""Here are today's Monaco-related news headlines and summaries.
+Compile them into the Morning Brief digest following your format instructions.
+Pick only the most relevant and interesting 3–7 items.
 
-Source: {item['source']}
-Title: {item['title']}
-Summary: {item['summary']}
-URL: {item['link']}
-
-Include the URL as a plain link at the very end of the post (after the hashtags), on its own line.
+RAW NEWS:
+{news_block}
 """
     response = client.messages.create(
         model="claude-haiku-4-5-20251001",
@@ -158,20 +186,24 @@ def main():
     relevant = [i for i in items if is_monaco_relevant(i)]
     log.info(f"{len(relevant)} Monaco-relevant items found")
 
-    published = 0
-    for item in relevant:
-        if published >= MAX_POSTS_PER_DAY:
-            break
-        try:
-            post_text = generate_post(item, client)
-            if post_to_telegram(post_text):
+    if not relevant:
+        log.info("No relevant items found today — skipping post.")
+        save_seen_items(seen)
+        return
+
+    try:
+        digest = generate_digest(relevant, client)
+        if post_to_telegram(digest):
+            for item in relevant:
                 seen.add(item["id"])
-                published += 1
-        except Exception as e:
-            log.error(f"Error processing item '{item['title']}': {e}")
+            log.info("Morning Brief published ✓")
+        else:
+            log.error("Failed to post digest to Telegram.")
+    except Exception as e:
+        log.error(f"Error generating digest: {e}")
 
     save_seen_items(seen)
-    log.info(f"Done. Published {published} post(s).")
+    log.info("Done.")
 
 
 if __name__ == "__main__":
