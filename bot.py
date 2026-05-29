@@ -99,24 +99,36 @@ def item_id(entry) -> str:
 
 
 def fetch_fresh_items(seen: set) -> list[dict]:
-    """Collect unseen news items from all RSS feeds."""
-    items = []
+    """Collect unseen news items from all RSS feeds, max 5 per source to ensure diversity."""
+    per_source = []
     for url in NEWS_SOURCES:
         try:
             feed = feedparser.parse(url)
+            source_items = []
             for entry in feed.entries:
                 eid = item_id(entry)
                 if eid in seen:
                     continue
-                items.append({
+                source_items.append({
                     "id": eid,
                     "title": entry.get("title", ""),
                     "summary": entry.get("summary", entry.get("description", ""))[:800],
                     "link": entry.get("link", ""),
                     "source": feed.feed.get("title", url),
                 })
+                if len(source_items) >= 5:  # max 5 per source
+                    break
+            per_source.append(source_items)
+            log.info(f"Fetched {len(source_items)} items from {url.split('/')[2]}")
         except Exception as e:
             log.warning(f"Failed to fetch {url}: {e}")
+
+    # Interleave sources so no single source dominates
+    items = []
+    for i in range(max((len(s) for s in per_source), default=0)):
+        for source in per_source:
+            if i < len(source):
+                items.append(source[i])
     return items
 
 
