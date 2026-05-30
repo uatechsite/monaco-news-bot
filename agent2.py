@@ -50,10 +50,10 @@ Your daily output is ONE post: the Morning Brief — a curated digest of 5–10 
 FORMAT (follow exactly):
 🇲🇨 Monaco Digest — Daily Brief
 
-1. [Title — max 10 words]
+1. <b>[Title — max 10 words]</b>
 [Sentence 1.] [Sentence 2.]
 
-2. [Title — max 10 words]
+2. <b>[Title — max 10 words]</b>
 [Sentence 1.] [Sentence 2.]
 
 ... (5 to 10 items total)
